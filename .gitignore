@@ -1,0 +1,30 @@
+# Secrets -- never commit these
+service_account.json
+walmart-bot-*.json
+*.iam.gserviceaccount.com.json
+*-key.json
+
+# Inspection dumps / scratch
+inspect_dump.json
+pubtest.csv
+
+# Playwright persistent browser profile (cookies/sessions)
+browser_profile/
+
+# Per-machine saved UI settings
+settings.json
+
+# Logs
+bot.log
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# PyInstaller build output
+build/
+dist/
+*.spec
