@@ -369,7 +369,14 @@ def parse_walmart_status(body):
     if re.search(r"Complete,\s*\n?\s*Picked up", body):
         return "Picked up", "Complete, Picked up"
 
-    # 4) Last resort: loose whole-page scan (can be wrong; used only if nothing else hit).
+    # 4) Last resort. If the 4-stage tracker is present but we could not read the
+    #    ACTIVE stage above, do NOT guess from the stage labels (they always
+    #    include "Delivered" as a future step) -- return nothing so the row gets
+    #    flagged for a manual look instead of a wrong "Delivered".
+    has_tracker = ("placed" in low and "delivered" in low
+                   and ("on the way" in low or "out for delivery" in low))
+    if has_tracker:
+        return "", ""
     return normalize_status(body), ""
 
 
@@ -577,18 +584,25 @@ def lookup_one_order(page, order_number, email, reporter):
     page.wait_for_timeout(500)
     handle_captcha_if_present(page, reporter)
 
-    # Wait for the order-details content to actually render before reading,
-    # so a fast page load doesn't give us a half-empty page.
+    # Wait for the order-details content AND the status tracker to actually
+    # render before reading, so a fast page load doesn't give a half-empty page.
+    status_signals = ("current,", "delivery", "pickup", "shipping", "arriv",
+                      "preparing", "placed", "on the way", "out for delivery",
+                      "delivered", "shipped", "delayed", "cancel", "refund",
+                      "picked up", "getting it ready", "dropped off")
     body = ""
-    for _ in range(14):   # up to ~7s
+    for _ in range(24):   # up to ~12s
         try:
             body = page.inner_text("body", timeout=3000)
         except Exception:
             body = ""
         low = body.lower()
-        if ("order#" in low or "order #" in low
-                or _any_phrase(body, config.NOT_FOUND_PHRASES)
+        if (_any_phrase(body, config.NOT_FOUND_PHRASES)
                 or _any_phrase(body, config.NEEDS_HUMAN_PHRASES)):
+            break
+        has_order = "order#" in low or "order #" in low
+        has_status = any(sig in low for sig in status_signals)
+        if has_order and has_status:
             break
         page.wait_for_timeout(500)
 
@@ -648,9 +662,11 @@ def format_row_status(results):
     - otherwise                -> "<order>: <status>" per line
     - 1 order                  -> just the status
     """
+    if not results:
+        return ""
     if len(results) == 1:
         return results[0][1]
-    if results and all(s.lower() == "delivered" for _, s in results):
+    if all(s.lower() == "delivered" for _, s in results):
         return "Delivered"
     return "\n".join(f"{num}: {status}" for num, status in results)
 
